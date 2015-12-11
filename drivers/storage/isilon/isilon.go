@@ -5,10 +5,9 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	//	"reflect"
+	"reflect"
 
-	//	"sort"
-	//	"strconv"
+	"strconv"
 	"strings"
 
 	isi "github.com/emccode/goisilon"
@@ -30,14 +29,12 @@ type driver struct {
 }
 
 func ef() goof.Fields {
-	log.Println("Start ef()")
 	return goof.Fields{
 		"provider": providerName,
 	}
 }
 
 func eff(fields goof.Fields) map[string]interface{} {
-	log.Println("Start eff()")
 	errFields := map[string]interface{}{
 		"provider": providerName,
 	}
@@ -50,19 +47,15 @@ func eff(fields goof.Fields) map[string]interface{} {
 }
 
 func init() {
-	log.Println("Start init()")
-
 	core.RegisterDriver(providerName, newDriver)
 	gofig.Register(configRegistration())
 }
 
 func newDriver() core.Driver {
-	log.Println("Start newDriver()")
 	return &driver{}
 }
 
 func (d *driver) Init(r *core.RexRay) error {
-	log.Println("Start Init()")
 
 	d.r = r
 
@@ -103,7 +96,6 @@ func (d *driver) Init(r *core.RexRay) error {
 var scsiDeviceVendors []string
 
 func walkDevices(path string, f os.FileInfo, err error) error {
-	log.Println("Start walkDevices()")
 	vendorFilePath := fmt.Sprintf("%s/device/vendor", path)
 	// fmt.Printf("vendorFilePath: %+v\n", string(vendorFilePath))
 	data, _ := ioutil.ReadFile(vendorFilePath)
@@ -112,7 +104,6 @@ func walkDevices(path string, f os.FileInfo, err error) error {
 }
 
 var isIsilonAttached = func() bool {
-	log.Println("Start isIsilonAttached()")
 	return true
 	filepath.Walk("/sys/class/scsi_device/", walkDevices)
 	for _, vendor := range scsiDeviceVendors {
@@ -124,7 +115,6 @@ var isIsilonAttached = func() bool {
 }
 
 func (d *driver) Name() string {
-	log.Println("Start Name()")
 	return providerName
 }
 
@@ -174,7 +164,6 @@ func (d *driver) GetVolumeMapping() ([]*core.BlockDevice, error) {
 }
 
 func (d *driver) getVolume(volumeID, volumeName string) ([]isi.Volume, error) {
-	log.Println("Start getVolume()")
 	var volumes []isi.Volume
 	if volumeID != "" || volumeName != "" {
 		volume, err := d.client.GetVolume(volumeID, volumeName)
@@ -193,6 +182,23 @@ func (d *driver) getVolume(volumeID, volumeName string) ([]isi.Volume, error) {
 
 	}
 	return volumes, nil
+}
+
+func (d *driver) getSize(volumeID, volumeName string) (int64, error) {
+
+	if volumeID != "" || volumeName != "" {
+		quota, err := d.client.GetQuota(volumeID, volumeName)
+		if err != nil {
+			return 0, nil
+		}
+
+		// quota.Thresholds.Hard is of type interface{}.  numeric values imported into
+		// it are stored as type float64, but we need it to be an int64.
+		return int64(quota.Thresholds.Hard.(float64)), nil
+	}
+
+	return 0, error.Error("No volume name or id.")
+
 }
 
 func (d *driver) GetVolume(volumeID, volumeName string) ([]*core.Volume, error) {
@@ -230,12 +236,14 @@ func (d *driver) GetVolume(volumeID, volumeName string) ([]*core.Volume, error) 
 			attachmentsSD = append(attachmentsSD, attachmentSD)
 		}
 
+		volSize, _ := d.getSize(volume.Name, volume.Name)
+
 		volumeSD := &core.Volume{
 			Name:             volume.Name,
 			VolumeID:         volume.Name,
-			Size:             "", //strconv.Itoa(volSize / 1024 / 1024),
+			Size:             strconv.FormatInt(volSize/1024/1024, 10),
 			AvailabilityZone: "",
-			NetworkName:      d.client.Path(volume.Name), //volume.NaaName,
+			NetworkName:      d.client.Path(volume.Name),
 			Attachments:      attachmentsSD,
 		}
 		volumesSD = append(volumesSD, volumeSD)
@@ -251,19 +259,24 @@ func (d *driver) CreateVolume(
 	log.Println("Start CreateVolume() (", volumeName, ") (", volumeID, ")")
 
 	newIsiVolume, _ := d.client.CreateVolume(volumeName)
-	volumes, _ := d.GetVolume(newIsiVolume.Name, newIsiVolume.Name)
+
+	err := d.client.SetQuota(volumeName, size)
+	if err != nil {
+		// TODO: not sure how to handle this situation.  Delete created volume
+		// and return an error?  Ignore and continue?
+	}
+
+	volumes, _ := d.GetVolume(volumeID, volumeName)
 
 	return volumes[0], nil
 }
 
 func (d *driver) RemoveVolume(volumeID string) error {
-	log.Println("Start RemoveVolume()")
 	err := d.client.DeleteVolume(volumeID)
 	if err != nil {
 		return err
 	}
 
-	log.Println("Deleted Volume: " + volumeID)
 	return nil
 }
 
@@ -274,7 +287,6 @@ func (d *driver) GetSnapshot(
 }
 
 func getIndex(href string) string {
-	log.Println("Start getIndex()")
 	hrefFields := strings.Split(href, "/")
 	return hrefFields[len(hrefFields)-1]
 }
@@ -405,7 +417,6 @@ func (d *driver) nfsHost() string {
 }
 
 func configRegistration() *gofig.Registration {
-	log.Println("Start configRegistration()")
 	r := gofig.NewRegistration("Isilon")
 	r.Key(gofig.String, "", "", "", "isilon.endpoint")
 	r.Key(gofig.Bool, "", false, "", "isilon.insecure")
