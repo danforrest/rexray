@@ -3,9 +3,10 @@ package isilon
 import (
 	"fmt"
 	"io/ioutil"
+	"net"
 	"os"
 	"path/filepath"
-	"reflect"
+	//	"reflect"
 
 	"strconv"
 	"strings"
@@ -121,17 +122,28 @@ func (d *driver) Name() string {
 func (d *driver) GetInstance() (*core.Instance, error) {
 	log.Println("Start GetInstance()")
 
-	return &core.Instance{}, nil
+	ipList, err := net.InterfaceAddrs()
+	if err != nil {
+		return nil, err
+	}
+	log.Println("address list:", ipList)
+	id := ""
+	for _, addr := range ipList {
+		if strings.Contains(addr.String(), "127.0.0.1/8") == false {
+			id = addr.String()
+			break
+		}
+	}
 
-	//	instance := &core.Instance{
-	//		ProviderName: providerName,
-	//		InstanceID:   strconv.Itoa(initiator.Index),
-	//		Region:       "",
-	//		Name:         initiator.Name,
-	//	}
+	instance := &core.Instance{
+		ProviderName: providerName,
+		InstanceID:   id,
+		Region:       "",
+		Name:         "",
+	}
 
-	// log.Println("Got Instance: " + fmt.Sprintf("%+v", instance))
-	//	return instance, nil
+	log.Println("Got Instance: " + fmt.Sprintf("%+v", instance))
+	return instance, nil
 }
 
 func (d *driver) nfsMountPath(mountPath string) string {
@@ -197,7 +209,7 @@ func (d *driver) getSize(volumeID, volumeName string) (int64, error) {
 		return int64(quota.Thresholds.Hard.(float64)), nil
 	}
 
-	return 0, error.Error("No volume name or id.")
+	return 0, errors.ErrMissingVolumeID
 
 }
 
@@ -227,9 +239,11 @@ func (d *driver) GetVolume(volumeID, volumeName string) ([]*core.Volume, error) 
 	for _, volume := range volumes {
 		var attachmentsSD []*core.VolumeAttachment
 		if _, exists := blockDeviceMap[volume.Name]; exists {
+			instance, _ := d.GetInstance()
+// TODO: Should the instance id be set here??? 			
 			attachmentSD := &core.VolumeAttachment{
 				VolumeID: volume.Name,
-				//				InstanceID: strconv.Itoa(d.initiator.Index),
+				InstanceID: instance.InstanceID,
 				DeviceName: blockDeviceMap[volume.Name].DeviceName,
 				Status:     "",
 			}
@@ -258,7 +272,7 @@ func (d *driver) CreateVolume(
 	NUIOPS, size int64, NUavailabilityZone string) (*core.Volume, error) {
 	log.Println("Start CreateVolume() (", volumeName, ") (", volumeID, ")")
 
-	newIsiVolume, _ := d.client.CreateVolume(volumeName)
+	d.client.CreateVolume(volumeName)
 
 	err := d.client.SetQuota(volumeName, size)
 	if err != nil {
@@ -328,7 +342,9 @@ func (d *driver) GetVolumeAttach(volumeID, instanceID string) ([]*core.VolumeAtt
 func (d *driver) AttachVolume(
 	notused bool,
 	volumeID, instanceID string, force bool) ([]*core.VolumeAttachment, error) {
-	log.Println("Start AttachVolume()")
+	log.Println("Start AttachVolume(): ")
+	log.Println("vol id: ", volumeID)
+	log.Println("inst id: ", instanceID)
 
 	if volumeID == "" {
 		return nil, errors.ErrMissingVolumeID
@@ -346,10 +362,29 @@ func (d *driver) AttachVolume(
 	if err := d.client.ExportVolume(volumeID); err != nil {
 		return nil, goof.WithError("problem exporting volume", err)
 	}
-
+	clients, err := d.client.GetExportClients(volumeID)
+	if err != nil {
+		return nil, goof.WithError("problem getting export client", err)
+	}
+	if clients != nil {
+		for _, client := range *clients {
+			log.Println("client: ", client)
+		}
+	}
+	// clear out any existing clients.  if force is false and we have existing clients, we need to exit early
+	
+	// TODO: This is setting the instance id (via GetVolume) regardless of if the volume is attached or not
 	volumeAttachment, err := d.GetVolumeAttach(volumeID, instanceID)
+	for _, att := range volumeAttachment {
+		log.Println("volume attachment: ", att)
+	}
 	if err != nil {
 		return nil, err
+	}
+
+	// TODO: 
+	if err := d.client.SetExportClient(volumeID, instanceID); err != nil {
+		return nil, goof.WithError("problem setting export client", err)
 	}
 
 	return volumeAttachment, nil
