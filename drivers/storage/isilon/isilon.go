@@ -204,9 +204,7 @@ func (d *driver) getSize(volumeID, volumeName string) (int64, error) {
 			return 0, nil
 		}
 
-		// quota.Thresholds.Hard is of type interface{}.  numeric values imported into
-		// it are stored as type float64, but we need it to be an int64.
-		return int64(quota.Thresholds.Hard.(float64)), nil
+		return quota.Thresholds.Hard, nil
 	}
 
 	return 0, errors.ErrMissingVolumeID
@@ -367,7 +365,7 @@ func (d *driver) AttachVolume(
 		return nil, goof.WithError("problem getting export client", err)
 	}
 	if clients != nil {
-		for _, client := range *clients {
+		for _, client := range clients {
 			log.Println("client: ", client)
 		}
 	}
