@@ -19,6 +19,7 @@ isilon:
   password: password
   volumePath: /rexray
   nfsHost: nfsHost
+  dataSubnet: subnet
 ```
 
 For information on the equivalent environment variable and CLI flag names
@@ -30,6 +31,7 @@ The following items are configurable specific to this driver.
 
  - `volumePath` represents the location under `/ifs/volumes` to allow volumes to be created and removed.
  - `nfsHost` is the configurable host used when mounting exports
+ - `dataSubnet` is the subnet the REX-Ray driver is running on
 
 ## Activating the Driver
 To activate the XtremIO driver please follow the instructions for
@@ -50,12 +52,13 @@ isilon:
   password: password
   volumePath: /rexray
   nfsHost: nfsHost
+  dataSubnet: subnet
 ```
 
 ## Instructions
-It is expected that the `volumePath` exists already within the Isilon system.  This would reflect a directory create under `/ifs/volumes/rexray`.  It is not necessary to export this volume.
+It is expected that the `volumePath` exists already within the Isilon system.  This would reflect a directory create under `/ifs/volumes/rexray`.  It is not necessary to export this volume.  The `dataSubnet` parameter is required so the Isilon driver can restrict access to attached volumes to the host that REX-Ray is running on.
 
 ## Caveats
 
-- This driver currently ignores the `--size` and `--volumeType` flags.
-- This driver does not support pre-emption currently.  Requests from alternate hosts can have bad results.
+- This driver currently ignores the `--volumeType` flag.
+
