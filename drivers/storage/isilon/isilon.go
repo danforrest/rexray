@@ -6,7 +6,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	//	"reflect"
 
 	"strconv"
 	"strings"
@@ -22,6 +21,8 @@ import (
 )
 
 const providerName = "Isilon"
+const bytesPerGb = int64(1024*1024*1024)
+const idDelimiter = "/"
 
 // The Isilon storage driver.
 type driver struct {
@@ -61,10 +62,11 @@ func (d *driver) Init(r *core.RexRay) error {
 	d.r = r
 
 	fields := eff(map[string]interface{}{
-		"endpoint":   d.endpoint(),
-		"userName":   d.userName(),
-		"insecure":   d.insecure(),
-		"volumePath": d.volumePath(),
+		"endpoint":    d.endpoint(),
+		"userName":    d.userName(),
+		"insecure":    d.insecure(),
+		"volumePath":  d.volumePath(),
+		"dataSubnets": d.dataSubnets(),
 	})
 
 	if d.password() == "" {
@@ -119,30 +121,47 @@ func (d *driver) Name() string {
 	return providerName
 }
 
-func (d *driver) GetInstance() (*core.Instance, error) {
-	log.Println("Start GetInstance()")
+// Create an instance ID from a list of client IP addresses
+func createInstanceId(clients []string) string {
+	return strings.Join(clients, idDelimiter)
+}
 
+// Parse an instance ID into a list of client IP addresses
+func parseInstanceId(id string) []string {
+	return strings.Split(id, idDelimiter)
+}
+
+func (d *driver) GetInstance() (*core.Instance, error) {
+
+	// parse the data subnet
+	_, dataSubnet, err := net.ParseCIDR(d.dataSubnets())
+	if err != nil {
+		return nil, err
+	}
+
+	// find all local IP addresses on the data subnet
 	ipList, err := net.InterfaceAddrs()
 	if err != nil {
 		return nil, err
 	}
-	log.Println("address list:", ipList)
-	id := ""
+	var idList []string
 	for _, addr := range ipList {
-		if strings.Contains(addr.String(), "127.0.0.1/8") == false {
-			id = addr.String()
-			break
+		ip, _, err := net.ParseCIDR(addr.String())
+		if err != nil {
+			return nil, err
+		}
+		if dataSubnet.Contains(ip) == true {
+			idList = append(idList, ip.String())
 		}
 	}
 
 	instance := &core.Instance{
 		ProviderName: providerName,
-		InstanceID:   id,
+		InstanceID:   createInstanceId(idList),
 		Region:       "",
 		Name:         "",
 	}
 
-	log.Println("Got Instance: " + fmt.Sprintf("%+v", instance))
 	return instance, nil
 }
 
@@ -151,7 +170,6 @@ func (d *driver) nfsMountPath(mountPath string) string {
 }
 
 func (d *driver) GetVolumeMapping() ([]*core.BlockDevice, error) {
-	log.Println("Start GetVolumeMapping()")
 
 	exports, err := d.client.GetVolumeExports()
 	if err != nil {
@@ -160,9 +178,10 @@ func (d *driver) GetVolumeMapping() ([]*core.BlockDevice, error) {
 
 	var BlockDevices []*core.BlockDevice
 	for _, export := range exports {
+		
 		device := &core.BlockDevice{
 			ProviderName: providerName,
-			InstanceID:   "",
+			InstanceID:   createInstanceId(export.Clients),
 			Region:       "",
 			DeviceName:   d.nfsMountPath(export.ExportPath),
 			VolumeID:     export.Volume.Name,
@@ -212,7 +231,6 @@ func (d *driver) getSize(volumeID, volumeName string) (int64, error) {
 }
 
 func (d *driver) GetVolume(volumeID, volumeName string) ([]*core.Volume, error) {
-	log.Println("Start GetVolume()")
 
 	volumes, err := d.getVolume(volumeID, volumeName)
 	if err != nil {
@@ -237,11 +255,9 @@ func (d *driver) GetVolume(volumeID, volumeName string) ([]*core.Volume, error) 
 	for _, volume := range volumes {
 		var attachmentsSD []*core.VolumeAttachment
 		if _, exists := blockDeviceMap[volume.Name]; exists {
-			instance, _ := d.GetInstance()
-// TODO: Should the instance id be set here??? 			
 			attachmentSD := &core.VolumeAttachment{
-				VolumeID: volume.Name,
-				InstanceID: instance.InstanceID,
+				VolumeID:   volume.Name,
+				InstanceID: blockDeviceMap[volume.Name].InstanceID,
 				DeviceName: blockDeviceMap[volume.Name].DeviceName,
 				Status:     "",
 			}
@@ -253,7 +269,7 @@ func (d *driver) GetVolume(volumeID, volumeName string) ([]*core.Volume, error) 
 		volumeSD := &core.Volume{
 			Name:             volume.Name,
 			VolumeID:         volume.Name,
-			Size:             strconv.FormatInt(volSize/1024/1024, 10),
+			Size:             strconv.FormatInt(volSize/bytesPerGb, 10),
 			AvailabilityZone: "",
 			NetworkName:      d.client.Path(volume.Name),
 			Attachments:      attachmentsSD,
@@ -268,11 +284,10 @@ func (d *driver) CreateVolume(
 	notUsed bool,
 	volumeName, volumeID, snapshotID, NUvolumeType string,
 	NUIOPS, size int64, NUavailabilityZone string) (*core.Volume, error) {
-	log.Println("Start CreateVolume() (", volumeName, ") (", volumeID, ")")
 
 	d.client.CreateVolume(volumeName)
 
-	err := d.client.SetQuota(volumeName, size)
+	err := d.client.SetQuota(volumeName, size*bytesPerGb)
 	if err != nil {
 		// TODO: not sure how to handle this situation.  Delete created volume
 		// and return an error?  Ignore and continue?
@@ -284,7 +299,12 @@ func (d *driver) CreateVolume(
 }
 
 func (d *driver) RemoveVolume(volumeID string) error {
-	err := d.client.DeleteVolume(volumeID)
+	err := d.client.ClearQuota(volumeID)
+	if err != nil {
+		return err
+	}
+
+	err = d.client.DeleteVolume(volumeID)
 	if err != nil {
 		return err
 	}
@@ -314,7 +334,6 @@ func (d *driver) RemoveSnapshot(snapshotID string) error {
 }
 
 func (d *driver) GetVolumeAttach(volumeID, instanceID string) ([]*core.VolumeAttachment, error) {
-	log.Println("Start GetVolumeAttach()")
 	if volumeID == "" {
 		return []*core.VolumeAttachment{}, errors.ErrMissingVolumeID
 	}
@@ -324,15 +343,13 @@ func (d *driver) GetVolumeAttach(volumeID, instanceID string) ([]*core.VolumeAtt
 	}
 
 	if instanceID != "" {
-		var attached bool
 		for _, volumeAttachment := range volume[0].Attachments {
 			if volumeAttachment.InstanceID == instanceID {
 				return volume[0].Attachments, nil
 			}
 		}
-		if !attached {
-			return []*core.VolumeAttachment{}, nil
-		}
+		// not attached
+		return []*core.VolumeAttachment{}, nil
 	}
 	return volume[0].Attachments, nil
 }
@@ -340,57 +357,60 @@ func (d *driver) GetVolumeAttach(volumeID, instanceID string) ([]*core.VolumeAtt
 func (d *driver) AttachVolume(
 	notused bool,
 	volumeID, instanceID string, force bool) ([]*core.VolumeAttachment, error) {
-	log.Println("Start AttachVolume(): ")
-	log.Println("vol id: ", volumeID)
-	log.Println("inst id: ", instanceID)
 
+	// sanity check the input
 	if volumeID == "" {
 		return nil, errors.ErrMissingVolumeID
 	}
-
+	if instanceID == "" {
+		return nil, goof.New("Missing Instance ID")
+	}
+	// ensure the volume exists and is exported
 	volumes, err := d.GetVolume(volumeID, "")
 	if err != nil {
 		return nil, err
 	}
-
 	if len(volumes) == 0 {
 		return nil, errors.ErrNoVolumesReturned
 	}
-
 	if err := d.client.ExportVolume(volumeID); err != nil {
 		return nil, goof.WithError("problem exporting volume", err)
 	}
+	// see if anyone is attached already
 	clients, err := d.client.GetExportClients(volumeID)
 	if err != nil {
 		return nil, goof.WithError("problem getting export client", err)
 	}
-	if clients != nil {
-		for _, client := range clients {
-			log.Println("client: ", client)
+	
+	// clear out any existing clients if necessary.  if force is false and 
+	// we have existing clients, we need to exit.
+	if len(clients) > 0 { 
+		if force == false {
+			return nil, goof.New("Volume already attached to another host")
+		}
+		
+		// remove all clients
+		err = d.client.ClearExportClients(volumeID)
+		if err != nil {
+			return nil, err
 		}
 	}
-	// clear out any existing clients.  if force is false and we have existing clients, we need to exit early
-	
-	// TODO: This is setting the instance id (via GetVolume) regardless of if the volume is attached or not
-	volumeAttachment, err := d.GetVolumeAttach(volumeID, instanceID)
-	for _, att := range volumeAttachment {
-		log.Println("volume attachment: ", att)
-	}
+
+	err = d.client.SetExportClients(volumeID, parseInstanceId(instanceID))
 	if err != nil {
 		return nil, err
 	}
 
-	// TODO: 
-	if err := d.client.SetExportClient(volumeID, instanceID); err != nil {
-		return nil, goof.WithError("problem setting export client", err)
+	volumeAttachment, err := d.GetVolumeAttach(volumeID, instanceID)
+	if err != nil {
+		return nil, err
 	}
 
 	return volumeAttachment, nil
 
 }
 
-func (d *driver) DetachVolume(notUsed bool, volumeID string, blank string, force bool) error {
-	log.Println("Start DetachVolume()")
+func (d *driver) DetachVolume(notUsed bool, volumeID string, blank string, notused bool) error {
 	if volumeID == "" {
 		return errors.ErrMissingVolumeID
 	}
@@ -408,7 +428,6 @@ func (d *driver) DetachVolume(notUsed bool, volumeID string, blank string, force
 		return goof.WithError("problem unexporting volume", err)
 	}
 
-	log.Println("Detached volume", volumeID)
 	return nil
 }
 
@@ -416,12 +435,10 @@ func (d *driver) CopySnapshot(
 	runAsync bool,
 	volumeID, snapshotID, snapshotName,
 	destinationSnapshotName, destinationRegion string) (*core.Snapshot, error) {
-	log.Println("Start CopySnapshot()")
 	return nil, errors.ErrNotImplemented
 }
 
 func (d *driver) GetDeviceNextAvailable() (string, error) {
-	log.Println("Start GetDeviceNextAvailable()")
 	return "", errors.ErrNotImplemented
 }
 
@@ -449,6 +466,10 @@ func (d *driver) nfsHost() string {
 	return d.r.Config.GetString("isilon.nfsHost")
 }
 
+func (d *driver) dataSubnets() string {
+	return d.r.Config.GetString("isilon.dataSubnets")
+}
+
 func configRegistration() *gofig.Registration {
 	r := gofig.NewRegistration("Isilon")
 	r.Key(gofig.String, "", "", "", "isilon.endpoint")
@@ -457,5 +478,6 @@ func configRegistration() *gofig.Registration {
 	r.Key(gofig.String, "", "", "", "isilon.password")
 	r.Key(gofig.String, "", "", "", "isilon.volumePath")
 	r.Key(gofig.String, "", "", "", "isilon.nfsHost")
+	r.Key(gofig.String, "", "", "", "isilon.dataSubnets")
 	return r
 }
