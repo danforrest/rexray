@@ -56,7 +56,6 @@ func newDriver() core.Driver {
 }
 
 func (d *driver) Init(r *core.RexRay) error {
-
 	d.r = r
 
 	fields := eff(map[string]interface{}{
@@ -119,8 +118,6 @@ func (d *driver) Name() string {
 }
 
 func (d *driver) GetInstance() (*core.Instance, error) {
-	log.Println("Start GetInstance()")
-
 	return &core.Instance{}, nil
 
 	//	instance := &core.Instance{
@@ -139,8 +136,6 @@ func (d *driver) nfsMountPath(mountPath string) string {
 }
 
 func (d *driver) GetVolumeMapping() ([]*core.BlockDevice, error) {
-	log.Println("Start GetVolumeMapping()")
-
 	exports, err := d.client.GetVolumeExports()
 	if err != nil {
 		return nil, err
@@ -202,8 +197,6 @@ func (d *driver) getSize(volumeID, volumeName string) (int64, error) {
 }
 
 func (d *driver) GetVolume(volumeID, volumeName string) ([]*core.Volume, error) {
-	log.Println("Start GetVolume()")
-
 	volumes, err := d.getVolume(volumeID, volumeName)
 	if err != nil {
 		return nil, err
@@ -302,7 +295,6 @@ func (d *driver) RemoveSnapshot(snapshotID string) error {
 }
 
 func (d *driver) GetVolumeAttach(volumeID, instanceID string) ([]*core.VolumeAttachment, error) {
-	log.Println("Start GetVolumeAttach()")
 	if volumeID == "" {
 		return []*core.VolumeAttachment{}, errors.ErrMissingVolumeID
 	}
@@ -328,7 +320,6 @@ func (d *driver) GetVolumeAttach(volumeID, instanceID string) ([]*core.VolumeAtt
 func (d *driver) AttachVolume(
 	notused bool,
 	volumeID, instanceID string, force bool) ([]*core.VolumeAttachment, error) {
-	log.Println("Start AttachVolume()")
 
 	if volumeID == "" {
 		return nil, errors.ErrMissingVolumeID
@@ -357,7 +348,6 @@ func (d *driver) AttachVolume(
 }
 
 func (d *driver) DetachVolume(notUsed bool, volumeID string, blank string, force bool) error {
-	log.Println("Start DetachVolume()")
 	if volumeID == "" {
 		return errors.ErrMissingVolumeID
 	}
@@ -383,12 +373,10 @@ func (d *driver) CopySnapshot(
 	runAsync bool,
 	volumeID, snapshotID, snapshotName,
 	destinationSnapshotName, destinationRegion string) (*core.Snapshot, error) {
-	log.Println("Start CopySnapshot()")
 	return nil, errors.ErrNotImplemented
 }
 
 func (d *driver) GetDeviceNextAvailable() (string, error) {
-	log.Println("Start GetDeviceNextAvailable()")
 	return "", errors.ErrNotImplemented
 }
 

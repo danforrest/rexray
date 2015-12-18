@@ -77,6 +77,14 @@ func (d *driver) Mount(volumeName, volumeID string, overwriteFs bool, newFsType 
 	}
 
 	if len(volAttachments) == 0 {
+		mp, err := getVolumeMountPath(vols[0].Name)
+		if err != nil {
+			return "", err
+		}
+
+		log.Debug("performing precautionary unmount")
+		_ = d.r.OS.Unmount(mp)
+
 		volAttachments, err = d.r.Storage.AttachVolume(
 			false, vols[0].VolumeID, instance.InstanceID, preempt)
 		if err != nil {
@@ -88,13 +96,17 @@ func (d *driver) Mount(volumeName, volumeID string, overwriteFs bool, newFsType 
 		return "", goof.New("Volume did not attach")
 	}
 
+	if volAttachments[0].DeviceName == "" {
+		return "", goof.New("no device name returned")
+	}
+
 	mounts, err := d.r.OS.GetMounts(volAttachments[0].DeviceName, "")
 	if err != nil {
 		return "", err
 	}
 
 	if len(mounts) > 0 {
-		return mounts[0].Mountpoint, nil
+		return d.volumeMountPath(mounts[0].Mountpoint), nil
 	}
 
 	switch {
@@ -123,7 +135,7 @@ func (d *driver) Mount(volumeName, volumeID string, overwriteFs bool, newFsType 
 		return "", err
 	}
 
-	return mountPath, nil
+	return d.volumeMountPath(mountPath), nil
 }
 
 // Unmount will perform the steps to unmount and existing volume and detach
@@ -269,7 +281,7 @@ func (d *driver) Path(volumeName, volumeID string) (string, error) {
 		return "", nil
 	}
 
-	return mounts[0].Mountpoint, nil
+	return d.volumeMountPath(mounts[0].Mountpoint), nil
 }
 
 // Create will create a remote volume
@@ -674,11 +686,20 @@ func (d *driver) NetworkName(volumeName, instanceID string) (string, error) {
 	return volumes[0].NetworkName, nil
 }
 
+func (d *driver) volumeMountPath(target string) string {
+	return fmt.Sprintf("%s%s", target, d.volumeRootPath())
+}
+
+func (d *driver) volumeRootPath() string {
+	return d.r.Config.GetString("linux.volume.rootPath")
+}
+
 func configRegistration() *gofig.Registration {
 	r := gofig.NewRegistration("Docker")
 	r.Key(gofig.String, "", "", "", "docker.volumeType")
 	r.Key(gofig.Int, "", 0, "", "docker.iops")
 	r.Key(gofig.Int, "", 0, "", "docker.size")
 	r.Key(gofig.String, "", "", "", "docker.availabilityZone")
+	r.Key(gofig.String, "", "/data", "", "linux.volume.rootpath")
 	return r
 }
