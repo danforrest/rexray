@@ -18,7 +18,9 @@ pages:
 - Home: index.md
 - User Guide:
     - Installation: user-guide/installation.md
+    - Automation: user-guide/automation.md
     - Configuration: user-guide/config.md
+    - Applications: user-guide/application.md
     - Storage Providers:
         - Amazon EC2: user-guide/storage-providers/ec2.md
         - Google Compute Engine: user-guide/storage-providers/gce.md
@@ -26,6 +28,7 @@ pages:
         - OpenStack: user-guide/storage-providers/openstack.md
         - Rackspace: user-guide/storage-providers/rackspace.md
         - ScaleIO: user-guide/storage-providers/scaleio.md
+        - VirtualBox: user-guide/storage-providers/virtualbox.md
         - VMAX: user-guide/storage-providers/vmax.md
         - XtremIO: user-guide/storage-providers/xtremio.md
     - Third-Party Integration:

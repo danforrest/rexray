@@ -27,8 +27,11 @@ authentication disabled by running
 Hot-Plugging is required, which limits the usefulness of this driver to `SATA`
 only.  Ensure that your VM has *pre-created* this controller and it is
 named `SATA`.  Otherwise the `controllerName` field must be populated
-with the name of the controller you wish to use.
+with the name of the controller you wish to use.  The port count must be set
+manually as it cannot be increased when the VMs are on.  A count of `30`
+is sugggested.
 
+VirtualBox 5.0.10+ must be used.
 
 ## Configuration
 The following is an example configuration of the VirtualBox driver.  
@@ -70,10 +73,6 @@ virtualbox:
 ```
 
 ## Caveats
-- The VBoxWebSrv SOAP API changed between v4 and v5.  This functionality
-  works against `4.3.28` and likely other v4 versions only.  We are
-  investigating support for same features under v5.
-- This driver was developed against Ubuntu 14.04.3 but should work with
-  others.
-- Snapshot and create volume from volume functionality is not available
-  since VirtualBox does not support volume snapshots directly.
+- Snapshot and create volume from volume functionality is not
+  available yet with this driver.
+- The driver supports VirtualBox 5.0.10+
