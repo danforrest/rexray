@@ -20,7 +20,7 @@ import:
     repo:    https://github.com/clintonskitson/goamz
     vcs:     git
   - package: github.com/emccode/goscaleio
-    ref:     ff8bf10008603307944f5b14cc2bc21bc6b411b2
+    ref:     fb0ebb20c2c30f850dc838e54019c7bc403d53fd
     repo:    https://github.com/emccode/goscaleio.git
     vcs:     git
   - package: github.com/emccode/goxtremio
@@ -65,7 +65,7 @@ import:
     repo:    https://github.com/emccode/govmax
     vcs:     git
   - package: github.com/emccode/goisilon
-    ref:     957085e0572a42cb7c318eb02a462dfe4001fc27
+    ref:     8fe0089f4a45139a15caf5e2fb8fa60074f36876
     repo:    https://github.com/emccode/goisilon
     vcs:     git
   - package: github.com/appropriate/go-virtualboxclient
